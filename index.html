@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sound Test</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      padding: 2rem;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    button {
+      display: block;
+      width: 100%;
+      padding: 1rem;
+      margin: 0.5rem 0;
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
+    #status {
+      padding: 1rem;
+      margin: 1rem 0;
+      background: #f0f0f0;
+      border-radius: 0.5rem;
+      font-family: monospace;
+      font-size: 0.9rem;
+    }
+    .state-suspended { color: orange; }
+    .state-running { color: green; }
+    .state-closed { color: red; }
+  </style>
+</head>
+<body>
+  <h1>Sound Test for iOS</h1>
+  
+  <div id="status">
+    AudioContext: <span id="ctx-state">not created</span><br>
+    Last action: <span id="last-action">none</span>
+  </div>
+
+  <button id="btn-init">1. Initialize Audio (tap this first)</button>
+  <button id="btn-tick">2. Tick Sound</button>
+  <button id="btn-ok">3. OK Sound</button>
+  <button id="btn-bad">4. Bad Sound</button>
+  <button id="btn-win">5. Win Sound</button>
+  <button id="btn-lose">6. Lose Sound</button>
+
+  <script>
+    /* Exact copy of the sound code from the board game */
+    const sounds = (() => {
+      let ctx = null;
+      function ac() {
+        try {
+          if (!ctx) {
+            ctx = new (window.AudioContext || window.webkitAudioContext)();
+            /* Unlock audio on iOS by playing a silent buffer */
+            const buf = ctx.createBuffer(1, 1, 22050);
+            const src = ctx.createBufferSource();
+            src.buffer = buf;
+            src.connect(ctx.destination);
+            src.start(0);
+          }
+          if (ctx && ctx.state === 'suspended') ctx.resume();
+        } catch (e) {
+          console.error('AudioContext error:', e);
+        }
+        return ctx;
+      }
+      function note(f, { at = 0, dur = 0.18, type = 'sine', vol = 0.045 } = {}) {
+        const c = ac(); 
+        if (!c) {
+          console.log('No AudioContext available');
+          return;
+        }
+        console.log('Playing note:', f, 'at', c.currentTime, 'state:', c.state);
+        const t0 = c.currentTime + at;
+        const o = c.createOscillator(), g = c.createGain();
+        o.type = type; o.frequency.setValueAtTime(f, t0);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(vol, t0 + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        o.connect(g); g.connect(c.destination);
+        o.start(t0); o.stop(t0 + dur + 0.05);
+      }
+      return {
+        tick() { note(1320, { dur: 0.04, vol: 0.015 }); },
+        ok()   { note(660, { dur: 0.12 }); note(990, { at: 0.08, dur: 0.16, vol: 0.035 }); },
+        bad()  { note(233, { dur: 0.16, type: 'triangle' }); note(174, { at: 0.1, dur: 0.22, type: 'triangle', vol: 0.05 }); },
+        win()  { [523, 659, 784, 1046].forEach((f, i) => note(f, { at: i * 0.09, dur: 0.22, vol: 0.04 })); },
+        lose() { [392, 311, 262].forEach((f, i) => note(f, { at: i * 0.12, dur: 0.26, type: 'triangle', vol: 0.045 })); },
+      };
+    })();
+
+    /* UI logic */
+    const statusEl = document.getElementById('status');
+    const ctxStateEl = document.getElementById('ctx-state');
+    const lastActionEl = document.getElementById('last-action');
+
+    function updateStatus() {
+      const ctx = sounds._ctx || null;
+      if (!ctx) {
+        ctxStateEl.textContent = 'not created';
+        ctxStateEl.className = '';
+      } else {
+        ctxStateEl.textContent = ctx.state;
+        ctxStateEl.className = 'state-' + ctx.state;
+      }
+    }
+
+    function logAction(msg) {
+      lastActionEl.textContent = msg + ' at ' + new Date().toLocaleTimeString();
+      setTimeout(updateStatus, 50);
+    }
+
+    document.getElementById('btn-init').addEventListener('click', () => {
+      sounds.tick();
+      logAction('Initialize (played tick)');
+    });
+
+    document.getElementById('btn-tick').addEventListener('click', () => {
+      sounds.tick();
+      logAction('Tick');
+    });
+
+    document.getElementById('btn-ok').addEventListener('click', () => {
+      sounds.ok();
+      logAction('OK');
+    });
+
+    document.getElementById('btn-bad').addEventListener('click', () => {
+      sounds.bad();
+      logAction('Bad');
+    });
+
+    document.getElementById('btn-win').addEventListener('click', () => {
+      sounds.win();
+      logAction('Win');
+    });
+
+    document.getElementById('btn-lose').addEventListener('click', () => {
+      sounds.lose();
+      logAction('Lose');
+    });
+
+    /* Expose ctx for debugging */
+    sounds._getCtx = () => {
+      try {
+        return new (window.AudioContext || window.webkitAudioContext)();
+      } catch (e) {
+        return null;
+      }
+    };
+  </script>
+</body>
+</html>
